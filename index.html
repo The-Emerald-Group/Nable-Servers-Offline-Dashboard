@@ -4,62 +4,60 @@
     <meta charset="UTF-8">
     <title>Emerald Server Status Monitor</title>
     <style>
-        :root { --crit: #ff3b30; --warn: #ffcc00; --good: #4cd964; --bg: #0a0a0a; }
+        :root { --crit: #ff3b30; --warn: #ffcc00; --good: #4cd964; --stale: #444444; --bg: #0a0a0a; --card-bg: #161616; }
         body { background: var(--bg); color: white; font-family: 'Segoe UI', sans-serif; padding: 20px; margin: 0; }
+        
+        /* Header & Clock */
+        .header-container { display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; border-bottom: 1px solid #222; padding-bottom: 10px; }
+        .clock-box { text-align: right; }
+        .harvest-time { font-size: 1.2rem; font-weight: bold; color: var(--good); }
+        .harvest-label { font-size: 0.7rem; color: #666; text-transform: uppercase; letter-spacing: 1px; }
+
         .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(380px, 1fr)); gap: 20px; }
-        .card { padding: 20px; border-radius: 12px; background: #161616; border-left: 10px solid; transition: 0.3s; }
+        .card { padding: 20px; border-radius: 12px; background: var(--card-bg); border-left: 10px solid; transition: 0.3s; }
         .Red { border-color: var(--crit); }
         .Green { border-color: var(--good); opacity: 0.6; }
         
         .cust-name { font-size: 1.5rem; font-weight: bold; margin-bottom: 5px; }
         .status-meta { font-size: 0.85rem; color: #888; margin-bottom: 15px; text-transform: uppercase; letter-spacing: 1px; }
 
-        .issue-list { border-top: 1px solid #333; padding-top: 10px; }
-        .issue-item { 
-            background: rgba(255,255,255,0.03); 
-            margin-bottom: 8px; 
-            padding: 10px 12px; 
-            border-radius: 4px;
-            border-left: 4px solid;
-        }
-        
-        /* Severity Styling */
+        .issue-item { margin-bottom: 8px; padding: 10px 12px; border-radius: 4px; border-left: 4px solid; }
         .sev-critical { border-left-color: var(--crit); background: rgba(255, 59, 48, 0.08); }
         .sev-warning { border-left-color: var(--warn); background: rgba(255, 204, 0, 0.05); }
-        .sev-stale { border-left-color: #444; background: rgba(255, 255, 255, 0.02); }
+        .sev-stale { border-left-color: var(--stale); background: rgba(255, 255, 255, 0.02); }
 
         .srv-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
         .srv-name { font-size: 0.95rem; font-weight: 600; }
         .srv-time { font-size: 0.8rem; opacity: 0.7; }
-        
-        .instruction { 
-            display: block; 
-            font-size: 0.8rem; 
-            font-weight: bold; 
-            letter-spacing: 0.5px; 
-        }
-        
-        /* Instruction Colors based on Severity */
-        .sev-critical .instruction { color: #ff9999; }
-        .sev-warning .instruction { color: var(--warn); }
+        .instruction { display: block; font-size: 0.8rem; font-weight: bold; }
         .sev-stale .instruction { color: #666; font-style: italic; }
-        
-        #status-bar { position: fixed; bottom: 10px; right: 20px; font-size: 0.7rem; color: #444; }
     </style>
 </head>
 <body>
-    <h1 style="text-align:center; color:#333; letter-spacing:5px;">EMERALD SERVER STATUS MONITOR</h1>
+    <div class="header-container">
+        <h1 style="margin:0; color:#444; letter-spacing:3px;">EMERALD MONITOR</h1>
+        <div class="clock-box">
+            <div id="harvest-clock" class="harvest-time">--:--:--</div>
+            <div class="harvest-label">Last N-able Harvest</div>
+        </div>
+    </div>
+
     <div id="grid" class="grid">Awaiting Data...</div>
-    <div id="status-bar">Syncing...</div>
 
     <script>
         async function update() {
             try {
                 const res = await fetch('data.json?v=' + Date.now());
-                const data = await res.json();
+                const raw = await res.json();
                 
+                // If the script sent a wrapper with a timestamp, use it
+                const data = Array.isArray(raw) ? raw : raw.devices;
+                const lastSync = raw.timestamp || new Date().toLocaleTimeString();
+                
+                document.getElementById('harvest-clock').innerText = lastSync;
+
                 if (!data || data.length === 0) {
-                    document.getElementById('grid').innerHTML = "<div style='grid-column: 1/-1; text-align: center; color: #666;'>Awaiting initial API response...</div>";
+                    document.getElementById('grid').innerHTML = "<div style='grid-column:1/-1;text-align:center;color:#666;'>No active alerts.</div>";
                     return;
                 }
 
@@ -73,7 +71,7 @@
                                     <div class="issue-item sev-${srv.severity}">
                                         <div class="srv-header">
                                             <span class="srv-name">${srv.name}</span>
-                                            <span class="srv-time">Agent Last Seen: ${srv.time}</span>
+                                            <span class="srv-time">${srv.time}</span>
                                         </div>
                                         <span class="instruction">${srv.label}</span>
                                     </div>
@@ -82,10 +80,7 @@
                         </div>
                     </div>
                 `).join('');
-                document.getElementById('status-bar').innerText = "Last Update: " + new Date().toLocaleTimeString();
-            } catch (e) { 
-                console.error("Fetch Error:", e); 
-            }
+            } catch (e) { console.error(e); }
         }
         setInterval(update, 30000); update();
     </script>
