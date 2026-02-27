@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Emerald Server Status Monitor</title>
+    <style>
+        :root { --crit: #ff3b30; --warn: #ffcc00; --stale: #666; --good: #4cd964; --bg: #0a0a0a; }
+        body { background: var(--bg); color: white; font-family: 'Segoe UI', sans-serif; padding: 20px; margin: 0; }
+        .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(380px, 1fr)); gap: 20px; }
+        .card { padding: 20px; border-radius: 12px; background: #161616; border-left: 10px solid; transition: 0.3s; }
+        .Red { border-color: var(--crit); }
+        .Green { border-color: var(--good); opacity: 0.6; }
+        
+        .cust-name { font-size: 1.5rem; font-weight: bold; margin-bottom: 5px; }
+        .status-meta { font-size: 0.85rem; color: #888; margin-bottom: 15px; text-transform: uppercase; letter-spacing: 1px; }
+
+        .issue-list { border-top: 1px solid #333; padding-top: 10px; }
+        .issue-item { 
+            display: flex; justify-content: space-between; align-items: center;
+            background: rgba(255,255,255,0.03); margin-bottom: 4px; padding: 8px 12px; border-radius: 4px;
+        }
+        
+        .sev-critical { border-left: 3px solid var(--crit); color: #ff9999; }
+        .sev-warning { border-left: 3px solid var(--warn); color: var(--warn); }
+        .sev-stale { border-left: 3px solid var(--stale); color: #888; font-style: italic; }
+
+        .srv-name { font-size: 0.9rem; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .srv-time { font-size: 0.8rem; opacity: 0.7; padding-left: 10px; }
+        
+        #status-bar { position: fixed; bottom: 10px; right: 20px; font-size: 0.7rem; color: #444; }
+    </style>
+</head>
+<body>
+    <h1 style="text-align:center; color:#333; letter-spacing:5px;">EMERALD SERVER STATUS MONITOR</h1>
+    <div id="grid" class="grid">Awaiting Data...</div>
+    <div id="status-bar">Syncing...</div>
+
+    <script>
+        async function update() {
+            try {
+                const res = await fetch('data.json?v=' + Date.now());
+                const data = await res.json();
+                document.getElementById('grid').innerHTML = data.map(cust => `
+                    <div class="card ${cust.Status}">
+                        <div class="cust-name">${cust.Customer}</div>
+                        <div class="status-meta">Inventory: ${cust.TotalServers} Servers</div>
+                        <div class="issue-list">
+                            ${cust.Status === 'Green' ? '<div style="color:var(--good); font-size:0.8rem;">✓ All systems active</div>' : 
+                                cust.IssuesList.map(srv => `
+                                    <div class="issue-item sev-${srv.severity}">
+                                        <span class="srv-name">${srv.name}</span>
+                                        <span class="srv-time">${srv.time}</span>
+                                    </div>
+                                `).join('')
+                            }
+                        </div>
+                    </div>
+                `).join('');
+                document.getElementById('status-bar').innerText = "Last Update: " + new Date().toLocaleTimeString();
+            } catch (e) { console.error(e); }
+        }
+        setInterval(update, 30000); update();
+    </script>
+</body>
+</html>
