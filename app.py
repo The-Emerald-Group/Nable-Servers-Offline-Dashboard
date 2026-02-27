@@ -4,14 +4,15 @@ import json
 import time
 import threading
 import sys
+import traceback
 from datetime import datetime, timezone
 from http.server import SimpleHTTPRequestHandler, HTTPServer
 
 # --- CONFIGURATION ---
 BASE_URL = "https://ncod153.n-able.com"
-# Now pulled from Docker Environment
+# Pulled from docker-compose environment variable
 JWT = os.environ.get("NABLE_TOKEN")
-THRESHOLD_MINS = 10
+THRESHOLD_MINS = 6
 DATA_FILE = "data.json"
 
 def log(msg):
@@ -24,12 +25,12 @@ def harvest_data():
 
     while True:
         try:
-            log(">>> Starting N-able Harvest...")
+            log(">>> Starting N-able Hybrid Harvest...")
             headers = {"Authorization": f"Bearer {JWT}", "Accept": "application/json"}
             auth_res = requests.post(f"{BASE_URL}/api/auth/authenticate", headers=headers, timeout=30)
             
             if auth_res.status_code != 200:
-                log(f"!! AUTH FAILED: {auth_res.status_code}")
+                log(f"!! AUTH FAILED: {auth_res.status_code} - {auth_res.text}")
                 time.sleep(60)
                 continue
 
@@ -40,6 +41,7 @@ def harvest_data():
             next_uri = f"{BASE_URL}/api/devices?pageSize=1000"
             while next_uri:
                 res_raw = requests.get(next_uri, headers=api_headers, timeout=60)
+                res_raw.raise_for_status()
                 res = res_raw.json()
                 devices.extend(res.get('data', []))
                 next_page = res.get('_links', {}).get('nextPage')
@@ -57,36 +59,50 @@ def harvest_data():
                         last_seen = datetime.strptime(clean_ts, "%Y-%m-%dT%H:%M:%S").replace(tzinfo=timezone.utc)
                         diff_mins = (current_time - last_seen).total_seconds() / 60
                         
+                        # Hybrid Check Logic
+                        tc_status = dev.get("remoteControlStatus", "").lower()
+                        tc_active = (tc_status == "active")
+                        agent_active = (diff_mins <= THRESHOLD_MINS)
+                        
                         cust = dev.get("customerName", "Unknown")
                         if cust not in wallboard_data:
                             wallboard_data[cust] = {
-                                "Customer": cust, "Status": "Green", "TotalServers": 0, 
-                                "IssuesCount": 0, "IssuesList": []
+                                "Customer": cust, 
+                                "Status": "Green", 
+                                "TotalServers": 0, 
+                                "IssuesCount": 0, 
+                                "IssuesList": []
                             }
                         
                         wallboard_data[cust]["TotalServers"] += 1
                         
-                        if diff_mins > THRESHOLD_MINS:
+                        # If either system is failing, we flag it
+                        if not agent_active or not tc_active:
                             wallboard_data[cust]["Status"] = "Red"
-                            wallboard_data[cust]["IssuesCount"] += 1
                             
-                            if diff_mins > 10080: 
-                                time_display = f"{int(diff_mins / 1440)}d ago"
-                                severity = "stale"
-                            elif diff_mins > 1440:
-                                time_display = f"{int(diff_mins / 60)}h ago"
-                                severity = "warning"
-                            else:
-                                time_display = f"{int(diff_mins)}m ago"
+                            if not agent_active and not tc_active:
+                                label = "🚨 CONFIRMED DOWN"
                                 severity = "critical"
+                                wallboard_data[cust]["IssuesCount"] += 2 # Floats to the very top
+                            elif not agent_active and tc_active:
+                                label = "🛠️ FIX AGENT (TC Active)"
+                                severity = "warning"
+                                wallboard_data[cust]["IssuesCount"] += 1
+                            elif agent_active and not tc_active:
+                                label = "🔌 FIX TAKE CONTROL"
+                                severity = "warning"
+                                wallboard_data[cust]["IssuesCount"] += 0.5 # Lowest priority red item
 
                             wallboard_data[cust]["IssuesList"].append({
                                 "name": dev['longName'],
-                                "time": time_display,
+                                "time": f"{int(diff_mins)}m ago",
+                                "label": label,
                                 "severity": severity
                             })
-                    except: continue
+                    except Exception as e:
+                        continue
 
+            # Sort by highest IssuesCount first, then alphabetically
             final_output = sorted(wallboard_data.values(), key=lambda x: (-x['IssuesCount'], x['Customer']))
             with open(DATA_FILE, "w", encoding="utf-8") as f:
                 json.dump(final_output, f, indent=4)
@@ -94,6 +110,9 @@ def harvest_data():
             
         except Exception as e:
             log(f"!! ERROR: {str(e)}")
+            log(traceback.format_exc())
+        
+        # Runs every 5 minutes
         time.sleep(300)
 
 class MyHandler(SimpleHTTPRequestHandler):
