@@ -57,10 +57,7 @@ def harvest_data():
                         last_seen = datetime.strptime(clean_ts, "%Y-%m-%dT%H:%M:%S").replace(tzinfo=timezone.utc)
                         diff_mins = (current_time - last_seen).total_seconds() / 60
                         
-                        # Filter: Skip anything dead for more than 30 days
-                        if diff_mins > 43200:
-                            continue
-
+                        # Format the time beautifully
                         if diff_mins > 10080: 
                             time_display = f"{int(diff_mins / 1440)}d ago"
                         elif diff_mins > 1440:
@@ -83,22 +80,25 @@ def harvest_data():
                         if diff_mins > THRESHOLD_MINS:
                             wallboard_data[cust]["Status"] = "Red"
                             
-                            # Standard Fallback Defaults (Option B)
-                            if diff_mins > 10080: 
+                            # --- TIERED TIMING LOGIC ---
+                            if diff_mins > 43200: # 30+ Days
+                                issue_label = "🕸️ HISTORICAL DOWN"
+                                severity = "stale"
+                                weight = 0.05 # Absolute bottom of the list
+                            elif diff_mins > 10080: # 7 to 30 Days
                                 issue_label = "👻 LONG TERM OFFLINE"
                                 severity = "stale"
                                 weight = 0.1 
-                            elif diff_mins > 1440: 
+                            elif diff_mins > 1440: # 1 to 7 Days
                                 issue_label = "⏳ STALE AGENT"
                                 severity = "warning"
                                 weight = 0.5
-                            else: 
+                            else: # Under 24 hours
                                 issue_label = "🚨 RECENTLY OVERDUE"
                                 severity = "critical"
                                 weight = 2 
                                 
-                                # --- THE PROBE INTERROGATOR ---
-                                # Only do the deep check for recently overdue servers to save API calls
+                                # --- THE PROBE INTERROGATOR (Only on recent downs) ---
                                 try:
                                     dev_id = dev.get("deviceId")
                                     svc_uri = f"{BASE_URL}/api/devices/{dev_id}/service-monitor-status"
@@ -111,18 +111,17 @@ def harvest_data():
                                                 state = svc.get("stateStatus", "")
                                                 appliance = svc.get("applianceName", "")
                                                 
-                                                # If it's Normal, the server is definitively UP.
+                                                # Probe says it's pingable
                                                 if state == "Normal":
                                                     issue_label = "🛠️ FIX AGENT (Probe Verified)"
                                                     severity = "warning"
                                                     weight = 1
-                                                # If it Failed, check WHO failed it. 
+                                                # Probe says it's dead
                                                 elif state == "Failed" and "Central Server" not in appliance:
-                                                    # It's a local probe, so it's a true Hard Down!
                                                     issue_label = "🚨 CONFIRMED DOWN (Probe Failed)"
                                                     severity = "critical"
-                                                    weight = 3 # Heaviest weight to push to the top
-                                                break # Found connectivity, stop looking through services
+                                                    weight = 3 
+                                                break 
                                 except Exception as e:
                                     log(f"Probe Check Error on {dev.get('longName')}: {str(e)}")
                                 
