@@ -27,7 +27,6 @@ Save the `docker-compose.yml` file to a folder on your host. No other files are 
 ```bash
 # Or pull the image manually ahead of time
 docker pull samuelstreets/nable-servers-offline-dashboard:latest
-:latest
 ```
 
 ### 2. Set your API token
