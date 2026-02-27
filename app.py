@@ -10,7 +10,7 @@ from http.server import SimpleHTTPRequestHandler, HTTPServer
 # --- CONFIGURATION ---
 BASE_URL = "https://ncod153.n-able.com"
 JWT = os.environ.get("NABLE_TOKEN")
-THRESHOLD_MINS = 6
+THRESHOLD_MINS = 6  # Minimum gap to consider a server "Offline"
 DATA_FILE = "data.json"
 
 def log(msg):
@@ -23,7 +23,7 @@ def harvest_data():
 
     while True:
         try:
-            log(">>> Starting N-able Harvest (Precise Timing)...")
+            log(">>> Starting N-able Harvest (Precise Timing & Probe Check)...")
             headers = {"Authorization": f"Bearer {JWT}", "Accept": "application/json"}
             auth_res = requests.post(f"{BASE_URL}/api/auth/authenticate", headers=headers, timeout=30)
             
@@ -49,6 +49,7 @@ def harvest_data():
             current_time = datetime.now(timezone.utc)
 
             for dev in devices:
+                # Filter for Servers with a valid check-in time
                 if "Server" in (dev.get("deviceClass") or "") and dev.get("lastApplianceCheckinTime"):
                     raw_ts = dev["lastApplianceCheckinTime"]
                     clean_ts = raw_ts[:19]
@@ -80,6 +81,7 @@ def harvest_data():
                         
                         wallboard_data[cust]["TotalServers"] += 1
                         
+                        # Only flag as an issue if it exceeds the threshold
                         if diff_mins > THRESHOLD_MINS:
                             wallboard_data[cust]["Status"] = "Red"
                             
@@ -101,7 +103,7 @@ def harvest_data():
                                 severity = "critical"
                                 weight = 2 
                                 
-                                # --- PROBE INTERROGATOR ---
+                                # --- PROBE INTERROGATOR (Only for recent outages) ---
                                 try:
                                     dev_id = dev.get("deviceId")
                                     svc_uri = f"{BASE_URL}/api/devices/{dev_id}/service-monitor-status"
@@ -121,7 +123,8 @@ def harvest_data():
                                                     severity = "critical"
                                                     weight = 3 
                                                 break 
-                                except Exception: pass
+                                except Exception: 
+                                    pass # Fall back to Recently Offline if check fails
                                 
                             wallboard_data[cust]["IssuesCount"] += weight
                             wallboard_data[cust]["IssuesList"].append({
@@ -131,20 +134,32 @@ def harvest_data():
                                 "severity": severity
                             })
 
-                    except Exception: continue
+                    except Exception: 
+                        continue
 
+            # Sort: Cards with highest weight at top, then alphabetical by Customer
             final_output = sorted(wallboard_data.values(), key=lambda x: (-x['IssuesCount'], x['Customer']))
+            
+            # Wrap payload with a timestamp for the UI clock
+            payload = {
+                "timestamp": datetime.now().strftime("%H:%M:%S"),
+                "devices": final_output
+            }
+            
             with open(DATA_FILE, "w", encoding="utf-8") as f:
-                json.dump(final_output, f, indent=4)
+                json.dump(payload, f, indent=4)
             log("*** HARVEST SUCCESS ***")
             
         except Exception as e:
             log(f"!! ERROR: {str(e)}")
+            log(traceback.format_exc())
         
+        # Wait 5 minutes before next pull
         time.sleep(300)
 
 class MyHandler(SimpleHTTPRequestHandler):
-    def log_message(self, format, *args): pass 
+    def log_message(self, format, *args): 
+        pass # Suppress standard web logs to keep console clean
     def end_headers(self):
         self.send_header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
         self.send_header('Access-Control-Allow-Origin', '*')
@@ -152,6 +167,12 @@ class MyHandler(SimpleHTTPRequestHandler):
 
 if __name__ == "__main__":
     if not os.path.exists(DATA_FILE):
-        with open(DATA_FILE, "w") as f: json.dump([], f)
+        with open(DATA_FILE, "w") as f: 
+            json.dump({"timestamp": "N/A", "devices": []}, f)
+    
+    # Start harvester thread
     threading.Thread(target=harvest_data, daemon=True).start()
+    
+    # Start web server
+    log("Web Server starting on port 8080...")
     HTTPServer(('0.0.0.0', 8080), MyHandler).serve_forever()
