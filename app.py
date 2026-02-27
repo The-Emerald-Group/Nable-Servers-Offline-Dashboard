@@ -58,8 +58,22 @@ def harvest_data():
                         last_seen = datetime.strptime(clean_ts, "%Y-%m-%dT%H:%M:%S").replace(tzinfo=timezone.utc)
                         diff_mins = (current_time - last_seen).total_seconds() / 60
                         
-                        # Normalize the TC status string safely
+                        # Restore the proper time formatting!
+                        if diff_mins > 10080: 
+                            time_display = f"{int(diff_mins / 1440)}d ago"
+                        elif diff_mins > 1440:
+                            time_display = f"{int(diff_mins / 60)}h ago"
+                        else:
+                            time_display = f"{int(diff_mins)}m ago"
+                        
+                        # --- CORRECTED TAKE CONTROL LOGIC ---
                         tc_status = str(dev.get("remoteControlStatus", "")).lower()
+                        
+                        # N-central uses "Disconnected" to mean "Healthy but no active session"
+                        # We only treat it as dead if it's explicitly broken or missing
+                        tc_dead_states = ["offline", "failed", "error", "not installed", "uninstalled", "none", "null", ""]
+                        tc_active = tc_status not in tc_dead_states
+                        
                         agent_active = (diff_mins <= THRESHOLD_MINS)
                         
                         cust = dev.get("customerName", "Unknown")
@@ -74,15 +88,14 @@ def harvest_data():
                         
                         wallboard_data[cust]["TotalServers"] += 1
                         
-                        # --- CORRECTED HYBRID LOGIC ---
                         issue_label = None
                         severity = None
                         weight = 0
 
                         if not agent_active:
-                            # Agent is late. Does Take Control prove the server is still alive?
-                            if tc_status in ["active", "online", "connected"]:
-                                issue_label = "🛠️ FIX AGENT (TC Active)"
+                            # Agent is late. Does TC prove it's alive?
+                            if tc_active:
+                                issue_label = "🛠️ FIX AGENT (TC Alive)"
                                 severity = "warning"
                                 weight = 1
                             else:
@@ -90,19 +103,18 @@ def harvest_data():
                                 severity = "critical"
                                 weight = 2
                         else:
-                            # Agent is fine. Did Take Control specifically crash?
-                            if tc_status in ["disconnected", "offline", "failed"]:
+                            # Agent is fine. Did TC explicitly crash?
+                            if tc_status in ["offline", "failed", "error"]:
                                 issue_label = "🔌 FIX TAKE CONTROL"
                                 severity = "warning"
                                 weight = 0.5
                                 
-                        # If an issue was flagged, append it
                         if issue_label:
                             wallboard_data[cust]["Status"] = "Red"
                             wallboard_data[cust]["IssuesCount"] += weight
                             wallboard_data[cust]["IssuesList"].append({
                                 "name": dev['longName'],
-                                "time": f"{int(diff_mins)}m ago",
+                                "time": time_display,  # Uses the corrected formatted time
                                 "label": issue_label,
                                 "severity": severity
                             })
