@@ -10,7 +10,6 @@ from http.server import SimpleHTTPRequestHandler, HTTPServer
 
 # --- CONFIGURATION ---
 BASE_URL = "https://ncod153.n-able.com"
-# Pulled from docker-compose environment variable
 JWT = os.environ.get("NABLE_TOKEN")
 THRESHOLD_MINS = 6
 DATA_FILE = "data.json"
@@ -59,9 +58,8 @@ def harvest_data():
                         last_seen = datetime.strptime(clean_ts, "%Y-%m-%dT%H:%M:%S").replace(tzinfo=timezone.utc)
                         diff_mins = (current_time - last_seen).total_seconds() / 60
                         
-                        # Hybrid Check Logic
-                        tc_status = dev.get("remoteControlStatus", "").lower()
-                        tc_active = (tc_status == "active")
+                        # Normalize the TC status string safely
+                        tc_status = str(dev.get("remoteControlStatus", "")).lower()
                         agent_active = (diff_mins <= THRESHOLD_MINS)
                         
                         cust = dev.get("customerName", "Unknown")
@@ -76,33 +74,42 @@ def harvest_data():
                         
                         wallboard_data[cust]["TotalServers"] += 1
                         
-                        # If either system is failing, we flag it
-                        if not agent_active or not tc_active:
-                            wallboard_data[cust]["Status"] = "Red"
-                            
-                            if not agent_active and not tc_active:
-                                label = "🚨 CONFIRMED DOWN"
-                                severity = "critical"
-                                wallboard_data[cust]["IssuesCount"] += 2 # Floats to the very top
-                            elif not agent_active and tc_active:
-                                label = "🛠️ FIX AGENT (TC Active)"
-                                severity = "warning"
-                                wallboard_data[cust]["IssuesCount"] += 1
-                            elif agent_active and not tc_active:
-                                label = "🔌 FIX TAKE CONTROL"
-                                severity = "warning"
-                                wallboard_data[cust]["IssuesCount"] += 0.5 # Lowest priority red item
+                        # --- CORRECTED HYBRID LOGIC ---
+                        issue_label = None
+                        severity = None
+                        weight = 0
 
+                        if not agent_active:
+                            # Agent is late. Does Take Control prove the server is still alive?
+                            if tc_status in ["active", "online", "connected"]:
+                                issue_label = "🛠️ FIX AGENT (TC Active)"
+                                severity = "warning"
+                                weight = 1
+                            else:
+                                issue_label = "🚨 CONFIRMED DOWN"
+                                severity = "critical"
+                                weight = 2
+                        else:
+                            # Agent is fine. Did Take Control specifically crash?
+                            if tc_status in ["disconnected", "offline", "failed"]:
+                                issue_label = "🔌 FIX TAKE CONTROL"
+                                severity = "warning"
+                                weight = 0.5
+                                
+                        # If an issue was flagged, append it
+                        if issue_label:
+                            wallboard_data[cust]["Status"] = "Red"
+                            wallboard_data[cust]["IssuesCount"] += weight
                             wallboard_data[cust]["IssuesList"].append({
                                 "name": dev['longName'],
                                 "time": f"{int(diff_mins)}m ago",
-                                "label": label,
+                                "label": issue_label,
                                 "severity": severity
                             })
+
                     except Exception as e:
                         continue
 
-            # Sort by highest IssuesCount first, then alphabetically
             final_output = sorted(wallboard_data.values(), key=lambda x: (-x['IssuesCount'], x['Customer']))
             with open(DATA_FILE, "w", encoding="utf-8") as f:
                 json.dump(final_output, f, indent=4)
@@ -112,7 +119,6 @@ def harvest_data():
             log(f"!! ERROR: {str(e)}")
             log(traceback.format_exc())
         
-        # Runs every 5 minutes
         time.sleep(300)
 
 class MyHandler(SimpleHTTPRequestHandler):
