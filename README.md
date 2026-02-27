@@ -6,7 +6,7 @@ A lightweight, self-hosted wallboard that polls your **N-able RMM** instance and
 
 ## How It Works
 
-A background Python thread authenticates with the N-able API every 5 minutes, fetches all managed devices, and flags any **Server-class device** that hasn't checked in within the configured threshold (default: **10 minutes**).
+A background Python thread authenticates with the N-able API every 5 minutes, fetches all managed devices, and flags any **Server-class device** that hasn't checked in within the configured threshold (default: **10 minutes**). 
 
 ---
 
@@ -20,16 +20,14 @@ A background Python thread authenticates with the N-able API every 5 minutes, fe
 
 ## Quick Start
 
-### 1. Clone / copy the project files
+### 1. Download docker-compose.yml
 
-Ensure the following files are in the same directory:
+Save the `docker-compose.yml` file to a folder on your host. No other files are needed — the image is pulled directly from Docker Hub.
 
-```
-.
-├── app.py
-├── index.html
-├── Dockerfile
-└── docker-compose.yml
+```bash
+# Or pull the image manually ahead of time
+docker pull samuelstreets/nable-servers-offline-dashboard:latest
+:latest
 ```
 
 ### 2. Set your API token
@@ -41,10 +39,12 @@ environment:
   - NABLE_TOKEN=your_jwt_token_here
 ```
 
-### 3. Build and run
+> ⚠️ **Never commit your JWT token to source control.**
+
+### 3. Run
 
 ```bash
-docker compose up -d --build
+docker compose up -d
 ```
 
 ### 4. Open the wallboard
@@ -58,14 +58,9 @@ Navigate to [http://localhost:8080](http://localhost:8080) in your browser.
 | Variable | Default | Description |
 |---|---|---|
 | `NABLE_TOKEN` | *(required)* | Your N-able JWT API token |
+| `PYTHONUNBUFFERED` | `1` | Ensures logs appear in real time |
 
-
-Update `docker-compose.yml` to reference it:
-
-```yaml
-env_file:
-  - .env
-```
+The check-in threshold (`THRESHOLD_MINS`) defaults to **10 minutes** and can be changed in `app.py` before building a custom image.
 
 ---
 
@@ -86,12 +81,6 @@ env_file:
 docker compose down
 ```
 
-To remove the built image as well:
-
-```bash
-docker compose down --rmi all
-```
-
 ---
 
 ## Troubleshooting
@@ -103,10 +92,16 @@ docker logs nable-monitor
 ```
 
 **AUTH FAILED error in logs**
-Your JWT token is invalid or expired. Regenerate it in N-able and update `docker-compose.yml`.
+Your JWT token is invalid or expired. Regenerate it in N-able and update `docker-compose.yml`, then restart:
+```bash
+docker compose down && docker compose up -d
+```
 
 **No servers appearing**
 Only devices with `deviceClass` containing `"Server"` and a `lastApplianceCheckinTime` value are displayed. Workstations and devices without a check-in timestamp are excluded by design.
+
+**GitHub Actions build failing**
+Check that both `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN` secrets are set correctly in your repo settings.
 
 ---
 
@@ -117,4 +112,5 @@ Only devices with `deviceClass` containing `"Server"` and a `lastApplianceChecki
 | `app.py` | Data harvester + embedded HTTP server |
 | `index.html` | Wallboard frontend |
 | `Dockerfile` | Container image definition |
-| `docker-compose.yml` | Service orchestration |
+| `docker-compose.yml` | Service orchestration (pull from Docker Hub) |
+| `.github/workflows/docker-build.yml` | GitHub Actions CI/CD pipeline |
