@@ -23,7 +23,7 @@ def harvest_data():
 
     while True:
         try:
-            log(">>> Starting N-able Harvest (with Probe Interrogation)...")
+            log(">>> Starting N-able Harvest (Precise Timing)...")
             headers = {"Authorization": f"Bearer {JWT}", "Accept": "application/json"}
             auth_res = requests.post(f"{BASE_URL}/api/auth/authenticate", headers=headers, timeout=30)
             
@@ -57,13 +57,16 @@ def harvest_data():
                         last_seen = datetime.strptime(clean_ts, "%Y-%m-%dT%H:%M:%S").replace(tzinfo=timezone.utc)
                         diff_mins = (current_time - last_seen).total_seconds() / 60
                         
-                        # Format the time beautifully
-                        if diff_mins > 2880: # Displays days if over 48 hours
+                        # --- PRECISE TIME FORMATTING ---
+                        if diff_mins > 2880: # Over 48 hours: Just show days
                             time_display = f"{int(diff_mins / 1440)}d ago"
-                        elif diff_mins > 60: # Displays hours
-                            time_display = f"{int(diff_mins / 60)}h ago"
-                        else: # Displays minutes
-                            time_display = f"{int(diff_mins)}m ago"
+                        else: # Under 48 hours: Show hours and minutes
+                            h = int(diff_mins // 60)
+                            m = int(diff_mins % 60)
+                            if h > 0:
+                                time_display = f"{h}h {m}m ago"
+                            else:
+                                time_display = f"{m}m ago"
                         
                         cust = dev.get("customerName", "Unknown")
                         if cust not in wallboard_data:
@@ -98,32 +101,27 @@ def harvest_data():
                                 severity = "critical"
                                 weight = 2 
                                 
-                                # --- THE PROBE INTERROGATOR (Only on recent downs < 48h) ---
+                                # --- PROBE INTERROGATOR ---
                                 try:
                                     dev_id = dev.get("deviceId")
                                     svc_uri = f"{BASE_URL}/api/devices/{dev_id}/service-monitor-status"
                                     svc_res = requests.get(svc_uri, headers=api_headers, timeout=10)
-                                    
                                     if svc_res.status_code == 200:
                                         services = svc_res.json().get("data", [])
                                         for svc in services:
                                             if svc.get("moduleName") == "Connectivity":
                                                 state = svc.get("stateStatus", "")
                                                 appliance = svc.get("applianceName", "")
-                                                
-                                                # Probe says it's pingable
                                                 if state == "Normal":
                                                     issue_label = "🛠️ FIX AGENT (Probe Verified)"
                                                     severity = "warning"
                                                     weight = 1
-                                                # Probe says it's dead
                                                 elif state == "Failed" and "Central Server" not in appliance:
                                                     issue_label = "🚨 CONFIRMED DOWN (Probe Failed)"
                                                     severity = "critical"
                                                     weight = 3 
                                                 break 
-                                except Exception as e:
-                                    log(f"Probe Check Error on {dev.get('longName')}: {str(e)}")
+                                except Exception: pass
                                 
                             wallboard_data[cust]["IssuesCount"] += weight
                             wallboard_data[cust]["IssuesList"].append({
@@ -133,8 +131,7 @@ def harvest_data():
                                 "severity": severity
                             })
 
-                    except Exception as e:
-                        continue
+                    except Exception: continue
 
             final_output = sorted(wallboard_data.values(), key=lambda x: (-x['IssuesCount'], x['Customer']))
             with open(DATA_FILE, "w", encoding="utf-8") as f:
@@ -143,7 +140,6 @@ def harvest_data():
             
         except Exception as e:
             log(f"!! ERROR: {str(e)}")
-            log(traceback.format_exc())
         
         time.sleep(300)
 
