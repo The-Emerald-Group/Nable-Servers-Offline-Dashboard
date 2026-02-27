@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <title>Emerald Server Status Monitor</title>
     <style>
-        :root { --crit: #ff3b30; --warn: #ffcc00; --stale: #666; --good: #4cd964; --bg: #0a0a0a; }
+        :root { --crit: #ff3b30; --warn: #ffcc00; --good: #4cd964; --bg: #0a0a0a; }
         body { background: var(--bg); color: white; font-family: 'Segoe UI', sans-serif; padding: 20px; margin: 0; }
         .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(380px, 1fr)); gap: 20px; }
         .card { padding: 20px; border-radius: 12px; background: #161616; border-left: 10px solid; transition: 0.3s; }
@@ -16,16 +16,29 @@
 
         .issue-list { border-top: 1px solid #333; padding-top: 10px; }
         .issue-item { 
-            display: flex; justify-content: space-between; align-items: center;
-            background: rgba(255,255,255,0.03); margin-bottom: 4px; padding: 8px 12px; border-radius: 4px;
+            background: rgba(255,255,255,0.03); 
+            margin-bottom: 8px; 
+            padding: 10px 12px; 
+            border-radius: 4px;
+            border-left: 4px solid;
         }
         
-        .sev-critical { border-left: 3px solid var(--crit); color: #ff9999; }
-        .sev-warning { border-left: 3px solid var(--warn); color: var(--warn); }
-        .sev-stale { border-left: 3px solid var(--stale); color: #888; font-style: italic; }
+        /* The styling for our new Hybrid status outputs */
+        .sev-critical { border-left-color: var(--crit); background: rgba(255, 59, 48, 0.08); }
+        .sev-warning { border-left-color: var(--warn); background: rgba(255, 204, 0, 0.05); }
 
-        .srv-name { font-size: 0.9rem; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-        .srv-time { font-size: 0.8rem; opacity: 0.7; padding-left: 10px; }
+        .srv-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
+        .srv-name { font-size: 0.95rem; font-weight: 600; }
+        .srv-time { font-size: 0.8rem; opacity: 0.7; }
+        
+        .instruction { 
+            display: block; 
+            font-size: 0.8rem; 
+            font-weight: bold; 
+            letter-spacing: 0.5px; 
+        }
+        .sev-critical .instruction { color: #ff9999; }
+        .sev-warning .instruction { color: var(--warn); }
         
         #status-bar { position: fixed; bottom: 10px; right: 20px; font-size: 0.7rem; color: #444; }
     </style>
@@ -40,6 +53,12 @@
             try {
                 const res = await fetch('data.json?v=' + Date.now());
                 const data = await res.json();
+                
+                if (!data || data.length === 0) {
+                    document.getElementById('grid').innerHTML = "<div style='grid-column: 1/-1; text-align: center; color: #666;'>Awaiting initial API response...</div>";
+                    return;
+                }
+
                 document.getElementById('grid').innerHTML = data.map(cust => `
                     <div class="card ${cust.Status}">
                         <div class="cust-name">${cust.Customer}</div>
@@ -48,8 +67,11 @@
                             ${cust.Status === 'Green' ? '<div style="color:var(--good); font-size:0.8rem;">✓ All systems active</div>' : 
                                 cust.IssuesList.map(srv => `
                                     <div class="issue-item sev-${srv.severity}">
-                                        <span class="srv-name">${srv.name}</span>
-                                        <span class="srv-time">${srv.time}</span>
+                                        <div class="srv-header">
+                                            <span class="srv-name">${srv.name}</span>
+                                            <span class="srv-time">Agent Last Seen: ${srv.time}</span>
+                                        </div>
+                                        <span class="instruction">${srv.label}</span>
                                     </div>
                                 `).join('')
                             }
@@ -57,7 +79,9 @@
                     </div>
                 `).join('');
                 document.getElementById('status-bar').innerText = "Last Update: " + new Date().toLocaleTimeString();
-            } catch (e) { console.error(e); }
+            } catch (e) { 
+                console.error("Fetch Error:", e); 
+            }
         }
         setInterval(update, 30000); update();
     </script>
