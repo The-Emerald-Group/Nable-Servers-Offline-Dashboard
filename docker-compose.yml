@@ -1,0 +1,10 @@
+services:
+  emerald-wallboard:
+    build: .
+    container_name: nable-monitor
+    ports:
+      - "8080:8080"
+    environment:
+      - NABLE_TOKEN=#Paste Your API User JWT Here!#
+      - PYTHONUNBUFFERED=1
+    restart: always
