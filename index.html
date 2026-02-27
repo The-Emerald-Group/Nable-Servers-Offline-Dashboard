@@ -23,9 +23,10 @@
             border-left: 4px solid;
         }
         
-        /* The styling for our new Hybrid status outputs */
+        /* Severity Styling */
         .sev-critical { border-left-color: var(--crit); background: rgba(255, 59, 48, 0.08); }
         .sev-warning { border-left-color: var(--warn); background: rgba(255, 204, 0, 0.05); }
+        .sev-stale { border-left-color: #444; background: rgba(255, 255, 255, 0.02); }
 
         .srv-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
         .srv-name { font-size: 0.95rem; font-weight: 600; }
@@ -37,8 +38,11 @@
             font-weight: bold; 
             letter-spacing: 0.5px; 
         }
+        
+        /* Instruction Colors based on Severity */
         .sev-critical .instruction { color: #ff9999; }
         .sev-warning .instruction { color: var(--warn); }
+        .sev-stale .instruction { color: #666; font-style: italic; }
         
         #status-bar { position: fixed; bottom: 10px; right: 20px; font-size: 0.7rem; color: #444; }
     </style>
