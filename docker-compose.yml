@@ -1,6 +1,6 @@
 services:
   emerald-wallboard:
-    image: samuelstreets/emerald-wallboard:latest
+    image: samuelstreets/nable-servers-offline-dashboard:latest
     container_name: nable-monitor
     ports:
       - "8080:8080"
