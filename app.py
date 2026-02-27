@@ -3,7 +3,6 @@ import requests
 import json
 import time
 import threading
-import sys
 import traceback
 from datetime import datetime, timezone
 from http.server import SimpleHTTPRequestHandler, HTTPServer
@@ -24,12 +23,12 @@ def harvest_data():
 
     while True:
         try:
-            log(">>> Starting N-able Hybrid Harvest...")
+            log(">>> Starting N-able Harvest (with Probe Interrogation)...")
             headers = {"Authorization": f"Bearer {JWT}", "Accept": "application/json"}
             auth_res = requests.post(f"{BASE_URL}/api/auth/authenticate", headers=headers, timeout=30)
             
             if auth_res.status_code != 200:
-                log(f"!! AUTH FAILED: {auth_res.status_code} - {auth_res.text}")
+                log(f"!! AUTH FAILED: {auth_res.status_code}")
                 time.sleep(60)
                 continue
 
@@ -58,23 +57,16 @@ def harvest_data():
                         last_seen = datetime.strptime(clean_ts, "%Y-%m-%dT%H:%M:%S").replace(tzinfo=timezone.utc)
                         diff_mins = (current_time - last_seen).total_seconds() / 60
                         
-                        # Restore the proper time formatting!
+                        # Filter: Skip anything dead for more than 30 days
+                        if diff_mins > 43200:
+                            continue
+
                         if diff_mins > 10080: 
                             time_display = f"{int(diff_mins / 1440)}d ago"
                         elif diff_mins > 1440:
                             time_display = f"{int(diff_mins / 60)}h ago"
                         else:
                             time_display = f"{int(diff_mins)}m ago"
-                        
-                        # --- CORRECTED TAKE CONTROL LOGIC ---
-                        tc_status = str(dev.get("remoteControlStatus", "")).lower()
-                        
-                        # N-central uses "Disconnected" to mean "Healthy but no active session"
-                        # We only treat it as dead if it's explicitly broken or missing
-                        tc_dead_states = ["offline", "failed", "error", "not installed", "uninstalled", "none", "null", ""]
-                        tc_active = tc_status not in tc_dead_states
-                        
-                        agent_active = (diff_mins <= THRESHOLD_MINS)
                         
                         cust = dev.get("customerName", "Unknown")
                         if cust not in wallboard_data:
@@ -88,33 +80,56 @@ def harvest_data():
                         
                         wallboard_data[cust]["TotalServers"] += 1
                         
-                        issue_label = None
-                        severity = None
-                        weight = 0
-
-                        if not agent_active:
-                            # Agent is late. Does TC prove it's alive?
-                            if tc_active:
-                                issue_label = "🛠️ FIX AGENT (TC Alive)"
-                                severity = "warning"
-                                weight = 1
-                            else:
-                                issue_label = "🚨 CONFIRMED DOWN"
-                                severity = "critical"
-                                weight = 2
-                        else:
-                            # Agent is fine. Did TC explicitly crash?
-                            if tc_status in ["offline", "failed", "error"]:
-                                issue_label = "🔌 FIX TAKE CONTROL"
+                        if diff_mins > THRESHOLD_MINS:
+                            wallboard_data[cust]["Status"] = "Red"
+                            
+                            # Standard Fallback Defaults (Option B)
+                            if diff_mins > 10080: 
+                                issue_label = "👻 LONG TERM OFFLINE"
+                                severity = "stale"
+                                weight = 0.1 
+                            elif diff_mins > 1440: 
+                                issue_label = "⏳ STALE AGENT"
                                 severity = "warning"
                                 weight = 0.5
+                            else: 
+                                issue_label = "🚨 RECENTLY OVERDUE"
+                                severity = "critical"
+                                weight = 2 
                                 
-                        if issue_label:
-                            wallboard_data[cust]["Status"] = "Red"
+                                # --- THE PROBE INTERROGATOR ---
+                                # Only do the deep check for recently overdue servers to save API calls
+                                try:
+                                    dev_id = dev.get("deviceId")
+                                    svc_uri = f"{BASE_URL}/api/devices/{dev_id}/service-monitor-status"
+                                    svc_res = requests.get(svc_uri, headers=api_headers, timeout=10)
+                                    
+                                    if svc_res.status_code == 200:
+                                        services = svc_res.json().get("data", [])
+                                        for svc in services:
+                                            if svc.get("moduleName") == "Connectivity":
+                                                state = svc.get("stateStatus", "")
+                                                appliance = svc.get("applianceName", "")
+                                                
+                                                # If it's Normal, the server is definitively UP.
+                                                if state == "Normal":
+                                                    issue_label = "🛠️ FIX AGENT (Probe Verified)"
+                                                    severity = "warning"
+                                                    weight = 1
+                                                # If it Failed, check WHO failed it. 
+                                                elif state == "Failed" and "Central Server" not in appliance:
+                                                    # It's a local probe, so it's a true Hard Down!
+                                                    issue_label = "🚨 CONFIRMED DOWN (Probe Failed)"
+                                                    severity = "critical"
+                                                    weight = 3 # Heaviest weight to push to the top
+                                                break # Found connectivity, stop looking through services
+                                except Exception as e:
+                                    log(f"Probe Check Error on {dev.get('longName')}: {str(e)}")
+                                
                             wallboard_data[cust]["IssuesCount"] += weight
                             wallboard_data[cust]["IssuesList"].append({
                                 "name": dev['longName'],
-                                "time": time_display,  # Uses the corrected formatted time
+                                "time": time_display,
                                 "label": issue_label,
                                 "severity": severity
                             })
@@ -134,7 +149,7 @@ def harvest_data():
         time.sleep(300)
 
 class MyHandler(SimpleHTTPRequestHandler):
-    def log_message(self, format, *args): log(f"WEB: {format % args}")
+    def log_message(self, format, *args): pass 
     def end_headers(self):
         self.send_header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
         self.send_header('Access-Control-Allow-Origin', '*')
