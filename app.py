@@ -58,11 +58,11 @@ def harvest_data():
                         diff_mins = (current_time - last_seen).total_seconds() / 60
                         
                         # Format the time beautifully
-                        if diff_mins > 10080: 
+                        if diff_mins > 2880: # Displays days if over 48 hours
                             time_display = f"{int(diff_mins / 1440)}d ago"
-                        elif diff_mins > 1440:
+                        elif diff_mins > 60: # Displays hours
                             time_display = f"{int(diff_mins / 60)}h ago"
-                        else:
+                        else: # Displays minutes
                             time_display = f"{int(diff_mins)}m ago"
                         
                         cust = dev.get("customerName", "Unknown")
@@ -81,24 +81,24 @@ def harvest_data():
                             wallboard_data[cust]["Status"] = "Red"
                             
                             # --- TIERED TIMING LOGIC ---
-                            if diff_mins > 43200: # 30+ Days
+                            if diff_mins > 20160: # 14+ Days
                                 issue_label = "🕸️ HISTORICAL DOWN"
                                 severity = "stale"
-                                weight = 0.05 # Absolute bottom of the list
-                            elif diff_mins > 10080: # 7 to 30 Days
+                                weight = 0.05 
+                            elif diff_mins > 10080: # 7 to 14 Days
                                 issue_label = "👻 LONG TERM OFFLINE"
                                 severity = "stale"
                                 weight = 0.1 
-                            elif diff_mins > 1440: # 1 to 7 Days
+                            elif diff_mins > 2880: # 48 Hours to 7 Days
                                 issue_label = "⏳ STALE AGENT"
                                 severity = "warning"
                                 weight = 0.5
-                            else: # Under 24 hours
-                                issue_label = "🚨 RECENTLY OVERDUE"
+                            else: # Under 48 hours
+                                issue_label = "🚨 RECENTLY OFFLINE"
                                 severity = "critical"
                                 weight = 2 
                                 
-                                # --- THE PROBE INTERROGATOR (Only on recent downs) ---
+                                # --- THE PROBE INTERROGATOR (Only on recent downs < 48h) ---
                                 try:
                                     dev_id = dev.get("deviceId")
                                     svc_uri = f"{BASE_URL}/api/devices/{dev_id}/service-monitor-status"
