@@ -10,7 +10,7 @@ from http.server import SimpleHTTPRequestHandler, HTTPServer
 # --- CONFIGURATION ---
 BASE_URL = "https://ncod153.n-able.com"
 JWT = os.environ.get("NABLE_TOKEN")
-THRESHOLD_MINS = 6  # Minimum gap to consider a server "Offline"
+THRESHOLD_MINS = 7  # Minimum gap to consider a server "Offline"
 DATA_FILE = "data.json"
 
 def log(msg):
