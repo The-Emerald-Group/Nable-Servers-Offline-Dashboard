@@ -13,10 +13,15 @@
         .harvest-time { font-size: 1.2rem; font-weight: bold; color: var(--good); }
         .harvest-label { font-size: 0.7rem; color: #666; text-transform: uppercase; letter-spacing: 1px; }
 
-        .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(380px, 1fr)); gap: 20px; }
+        .header-controls { display: flex; align-items: center; gap: 20px; }
+        .filter-toggle { font-size: 0.85rem; color: #aaa; cursor: pointer; display: flex; align-items: center; gap: 5px; }
+        .filter-toggle input { cursor: pointer; }
+
+        .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(380px, 1fr)); gap: 20px; align-items: start; }
         .card { padding: 20px; border-radius: 12px; background: var(--card-bg); border-left: 10px solid; transition: 0.3s; }
         .Red { border-color: var(--crit); }
         .Green { border-color: var(--good); opacity: 0.6; }
+        .hidden { display: none !important; }
         
         .cust-name { font-size: 1.5rem; font-weight: bold; margin-bottom: 5px; }
         .status-meta { font-size: 0.85rem; color: #888; margin-bottom: 15px; text-transform: uppercase; letter-spacing: 1px; }
@@ -31,14 +36,34 @@
         .srv-time { font-size: 0.8rem; opacity: 0.7; }
         .instruction { display: block; font-size: 0.8rem; font-weight: bold; }
         .sev-stale .instruction { color: #666; font-style: italic; }
+
+        /* INVENTORY DROPDOWN STYLES */
+        details { margin-top: 15px; border-top: 1px solid #333; padding-top: 10px; cursor: pointer; }
+        summary { font-size: 0.7rem; color: #666; text-transform: uppercase; letter-spacing: 1px; list-style: none; outline: none; }
+        .inv-list { margin-top: 10px; font-size: 0.8rem; max-height: 180px; overflow-y: auto; padding-right: 5px; }
+        .inv-list::-webkit-scrollbar { width: 6px; }
+        .inv-list::-webkit-scrollbar-track { background: rgba(0,0,0,0.2); border-radius: 4px; }
+        .inv-list::-webkit-scrollbar-thumb { background: #444; border-radius: 4px; }
+        .inv-list::-webkit-scrollbar-thumb:hover { background: #666; }
+
+        .inv-row { display: flex; justify-content: space-between; margin-bottom: 4px; border-bottom: 1px solid #222; padding-bottom: 2px; }
+        .status-ONLINE { color: var(--good); }
+        .status-OFFLINE { color: var(--crit); font-weight: bold; }
+        .offline-time { font-size: 0.75rem; color: #888; font-weight: normal; margin-left: 4px; }
     </style>
 </head>
 <body>
     <div class="header-container">
         <h1 style="margin:0; color:#444; letter-spacing:3px;">EMERALD MONITOR</h1>
-        <div class="clock-box">
-            <div id="harvest-clock" class="harvest-time">--:--:--</div>
-            <div class="harvest-label">Last N-able Harvest</div>
+        <div class="header-controls">
+            <label class="filter-toggle">
+                <input type="checkbox" id="hide-healthy" onchange="update()"> 
+                Hide Healthy Sites
+            </label>
+            <div class="clock-box">
+                <div id="harvest-clock" class="harvest-time">--:--:--</div>
+                <div class="harvest-label">Last N-able Harvest</div>
+            </div>
         </div>
     </div>
 
@@ -50,19 +75,24 @@
                 const res = await fetch('data.json?v=' + Date.now());
                 const raw = await res.json();
                 
-                // If the script sent a wrapper with a timestamp, use it
                 const data = Array.isArray(raw) ? raw : raw.devices;
                 const lastSync = raw.timestamp || new Date().toLocaleTimeString();
                 
                 document.getElementById('harvest-clock').innerText = lastSync;
+                const hideHealthy = document.getElementById('hide-healthy').checked;
 
                 if (!data || data.length === 0) {
                     document.getElementById('grid').innerHTML = "<div style='grid-column:1/-1;text-align:center;color:#666;'>No active alerts.</div>";
                     return;
                 }
 
-                document.getElementById('grid').innerHTML = data.map(cust => `
-                    <div class="card ${cust.Status}">
+                document.getElementById('grid').innerHTML = data.map(cust => {
+                    const isHidden = hideHealthy && cust.Status === 'Green' ? 'hidden' : '';
+                    // Auto-open details if the site has issues
+                    const detailsOpen = cust.Status !== 'Green' ? 'open' : '';
+
+                    return `
+                    <div class="card ${cust.Status} ${isHidden}">
                         <div class="cust-name">${cust.Customer}</div>
                         <div class="status-meta">Inventory: ${cust.TotalServers} Servers</div>
                         <div class="issue-list">
@@ -78,8 +108,26 @@
                                 `).join('')
                             }
                         </div>
+                        
+                        <details ${detailsOpen}>
+                            <summary>Server Inventory (${cust.Inventory ? cust.Inventory.length : 0})</summary>
+                            <div class="inv-list">
+                                ${!cust.Inventory || cust.Inventory.length === 0 ? '<div style="color:#666">No servers found.</div>' : 
+                                    cust.Inventory.map(item => `
+                                        <div class="inv-row">
+                                            <span title="${item.name}">
+                                                ${item.name.substring(0, 35)}${item.name.length > 35 ? '...' : ''}
+                                            </span>
+                                            <span class="status-${item.status}">
+                                                ${item.status} 
+                                                ${item.offline_duration ? `<span class="offline-time">(${item.offline_duration})</span>` : ''}
+                                            </span>
+                                        </div>
+                                    `).join('')}
+                            </div>
+                        </details>
                     </div>
-                `).join('');
+                `}).join('');
             } catch (e) { console.error(e); }
         }
         setInterval(update, 30000); update();
