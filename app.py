@@ -76,13 +76,23 @@ def harvest_data():
                                 "Status": "Green", 
                                 "TotalServers": 0, 
                                 "IssuesCount": 0, 
-                                "IssuesList": []
+                                "IssuesList": [],
+                                "Inventory": [] # Added inventory list
                             }
                         
                         wallboard_data[cust]["TotalServers"] += 1
                         
+                        is_offline = diff_mins > THRESHOLD_MINS
+                        
+                        # Populate full inventory for the dropdown
+                        wallboard_data[cust]["Inventory"].append({
+                            "name": dev['longName'],
+                            "status": "OFFLINE" if is_offline else "ONLINE",
+                            "offline_duration": time_display if is_offline else ""
+                        })
+                        
                         # Only flag as an issue if it exceeds the threshold
-                        if diff_mins > THRESHOLD_MINS:
+                        if is_offline:
                             wallboard_data[cust]["Status"] = "Red"
                             
                             # --- TIERED TIMING LOGIC ---
