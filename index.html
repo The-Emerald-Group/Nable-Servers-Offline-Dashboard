@@ -22,7 +22,6 @@
             display: grid; 
             grid-template-columns: repeat(auto-fill, minmax(380px, 1fr)); 
             gap: 20px; 
-            /* Removed align-items: start so cards stretch to equal height */
         }
         .card { 
             padding: 20px; 
@@ -30,8 +29,6 @@
             background: var(--card-bg); 
             border-left: 10px solid; 
             transition: 0.3s; 
-            
-            /* ADDED: Flexbox to push the dropdown to the bottom */
             display: flex;
             flex-direction: column;
             box-sizing: border-box;
@@ -111,8 +108,6 @@
 
                 document.getElementById('grid').innerHTML = data.map(cust => {
                     const isHidden = hideHealthy && cust.Status === 'Green' ? 'hidden' : '';
-                    // Auto-open details if the site has issues
-                    const detailsOpen = cust.Status !== 'Green' ? 'open' : '';
 
                     return `
                     <div class="card ${cust.Status} ${isHidden}">
@@ -132,7 +127,7 @@
                             }
                         </div>
                         
-                        <details ${detailsOpen}>
+                        <details>
                             <summary>Server Inventory (${cust.Inventory ? cust.Inventory.length : 0})</summary>
                             <div class="inv-list">
                                 ${!cust.Inventory || cust.Inventory.length === 0 ? '<div style="color:#666">No servers found.</div>' : 
